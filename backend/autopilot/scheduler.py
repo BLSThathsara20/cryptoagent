@@ -37,6 +37,7 @@ def get_autopilot_status(db) -> dict:
         {"name": "Database cleanup", "interval": "daily + 6h", "active": True, "manual": False},
         {"name": "Auto DB backup", "interval": "daily 02:00", "active": settings.auto_backup_enabled, "manual": False},
         {"name": "Health self-check", "interval": "15 min", "active": True, "manual": False},
+        {"name": "Validation Agent", "interval": "15 min", "active": True, "manual": False},
         {"name": "Stuck agent recovery", "interval": "15 min", "active": settings.auto_recovery_enabled, "manual": False},
         {"name": "System alerts", "interval": "on event", "active": True, "manual": False},
     ]

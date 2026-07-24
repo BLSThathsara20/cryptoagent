@@ -1,5 +1,6 @@
 import AgentPanel from '../components/AgentPanel';
 import FundManagerPanel from '../components/FundManagerPanel';
+import LLMUsagePanel from '../components/LLMUsagePanel';
 import TradeHistory from '../components/TradeHistory';
 
 export default function Agent() {
@@ -12,6 +13,10 @@ export default function Agent() {
 
       <div className="mb-6">
         <FundManagerPanel />
+      </div>
+
+      <div className="mb-6">
+        <LLMUsagePanel />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

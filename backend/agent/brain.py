@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from agent.analyser import backtest_setup
+from agent.llm_usage import record_llm_usage, is_budget_exceeded
 
 logger = logging.getLogger(__name__)
 
@@ -65,32 +66,66 @@ def _validate_decision(decision: dict, db: Session) -> dict | None:
 
 
 async def _call_openai(context: dict, db: Session) -> dict | None:
+    if is_budget_exceeded(db):
+        logger.warning("OpenAI monthly budget exceeded — skipping LLM call")
+        return None
+
     client = OpenAI(api_key=settings.openai_api_key)
-    response = client.chat.completions.create(
-        model=settings.openai_model,
-        max_tokens=1024,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_message(context)},
-        ],
-        response_format={"type": "json_object"},
-    )
-    text = response.choices[0].message.content or ""
-    decision = _parse_decision(text)
-    return _validate_decision(decision, db)
+    try:
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=1024,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": _build_user_message(context)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        usage = response.usage
+        record_llm_usage(
+            db,
+            provider="openai",
+            model=settings.openai_model,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            success=True,
+        )
+        text = response.choices[0].message.content or ""
+        decision = _parse_decision(text)
+        return _validate_decision(decision, db)
+    except Exception as e:
+        record_llm_usage(
+            db, "openai", settings.openai_model, 0, 0, success=False, error_message=str(e)[:500]
+        )
+        raise
 
 
 async def _call_claude(context: dict, db: Session) -> dict | None:
+    if is_budget_exceeded(db):
+        logger.warning("LLM monthly budget exceeded — skipping Claude call")
+        return None
+
     client = anthropic.Anthropic(api_key=settings.claude_api_key)
-    response = client.messages.create(
-        model=settings.claude_model,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_user_message(context)}],
-    )
-    text = response.content[0].text.strip()
-    decision = _parse_decision(text)
-    return _validate_decision(decision, db)
+    try:
+        response = client.messages.create(
+            model=settings.claude_model,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": _build_user_message(context)}],
+        )
+        input_t = response.usage.input_tokens if response.usage else 0
+        output_t = response.usage.output_tokens if response.usage else 0
+        record_llm_usage(
+            db, "claude", settings.claude_model, input_t, output_t, success=True
+        )
+        text = response.content[0].text.strip()
+        decision = _parse_decision(text)
+        return _validate_decision(decision, db)
+    except Exception as e:
+        record_llm_usage(
+            db, "claude", settings.claude_model, 0, 0, success=False, error_message=str(e)[:500]
+        )
+        raise
 
 
 async def get_llm_decision(context: dict, db: Session) -> dict | None:

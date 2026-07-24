@@ -49,7 +49,7 @@ def read_alert(alert_id: int, db: Session = Depends(get_db)):
 @router.post("/read-all")
 def read_all_alerts(db: Session = Depends(get_db)):
     count = mark_all_read(db)
-    return {"marked_read": count}
+    return {"deleted": count}
 
 
 @router.post("/test-binance")

@@ -43,6 +43,11 @@ def _ensure_indexes():
         "CREATE INDEX IF NOT EXISTS ix_live_trades_ts ON live_trades (timestamp DESC)",
         "CREATE INDEX IF NOT EXISTS ix_agent_decisions_created ON agent_decisions (created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_system_alerts_created ON system_alerts (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_llm_usage_logs_created ON llm_usage_logs (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_llm_monthly_spend_ym ON llm_monthly_spend (year_month DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_system_issues_created ON system_issues (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_agent_memories_created ON agent_memories (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_portfolio_snapshots_created ON portfolio_snapshots (created_at DESC)",
     ]
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for sql in indexes:

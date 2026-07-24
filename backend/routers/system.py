@@ -202,7 +202,7 @@ def _build_capabilities(db: Session, memory_count: int) -> dict:
         "roadmap": [
             {"id": "daily_retrain", "label": "Daily strategy retraining", "status": "planned", "detail": "Analyze win/loss patterns nightly and adjust weights"},
             {"id": "multi_agent", "label": "Multi-agent coordination", "status": "in progress", "detail": "Fund Manager + Trading Agent run each cycle — more agents coming"},
-            {"id": "llm_budget", "label": "Monthly AI budget cap", "status": "planned", "detail": "Hard spend limit with dashboard meter"},
+            {"id": "llm_budget", "label": "Monthly AI budget cap", "status": "active", "detail": "Spend tracked on Agent page; rule-based fallback when budget exceeded"},
             {"id": "openai_gemini", "label": "Multi-provider LLM support", "status": "planned", "detail": "OpenAI / Gemini as cheaper alternatives"},
         ],
     }

@@ -47,12 +47,14 @@ export default function AlertBell() {
 
   const markRead = async (id) => {
     await postAPI(`/alerts/${id}/read`);
-    load();
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+    setUnread((n) => Math.max(0, n - 1));
   };
 
   const markAllRead = async () => {
     await postAPI('/alerts/read-all');
-    load();
+    setAlerts([]);
+    setUnread(0);
   };
 
   const testBinance = async () => {
@@ -90,7 +92,7 @@ export default function AlertBell() {
               </button>
               {unread > 0 && (
                 <button onClick={markAllRead} className="text-[10px] text-gray-400 hover:text-white">
-                  Mark all read
+                  Clear all
                 </button>
               )}
             </div>
@@ -102,8 +104,8 @@ export default function AlertBell() {
               alerts.map((a) => (
                 <div
                   key={a.id}
-                  onClick={() => !a.read && markRead(a.id)}
-                  className={`p-3 border-b border-dark-700/50 border-l-4 cursor-pointer hover:bg-dark-700/30 ${LEVEL_STYLES[a.level] || LEVEL_STYLES.info} ${!a.read ? 'opacity-100' : 'opacity-60'}`}
+                  onClick={() => markRead(a.id)}
+                  className={`p-3 border-b border-dark-700/50 border-l-4 cursor-pointer hover:bg-dark-700/30 ${LEVEL_STYLES[a.level] || LEVEL_STYLES.info}`}
                 >
                   <div className="flex items-start gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${LEVEL_DOT[a.level]}`} />

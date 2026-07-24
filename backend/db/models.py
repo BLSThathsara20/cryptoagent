@@ -205,3 +205,67 @@ class SystemAlert(Base):
     message = Column(Text, nullable=False)
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now(), index=True)
+
+
+class LLMUsageLog(Base):
+    """Per-call LLM usage for current-month detail."""
+
+    __tablename__ = "llm_usage_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(20), nullable=False)  # openai, claude
+    model = Column(String(50), nullable=False)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+    success = Column(Boolean, default=True)
+    error_message = Column(String(500))
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+
+class LLMMonthlySpend(Base):
+    """Aggregated LLM spend per calendar month (keep last 4 months)."""
+
+    __tablename__ = "llm_monthly_spend"
+
+    id = Column(Integer, primary_key=True, index=True)
+    year_month = Column(String(7), unique=True, nullable=False, index=True)  # YYYY-MM
+    provider = Column(String(20), default="openai")
+    total_calls = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    total_input_tokens = Column(Integer, default=0)
+    total_output_tokens = Column(Integer, default=0)
+    total_cost_usd = Column(Float, default=0.0)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class SystemIssue(Base):
+    """Validation agent and system issues — shown on Issues page."""
+
+    __tablename__ = "system_issues"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String(30), nullable=False)  # trading, data, binance, agent, llm, system
+    severity = Column(String(10), nullable=False)  # info, warning, error, critical
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    source = Column(String(30), default="validator")  # validator, autopilot, manual
+    resolved = Column(Boolean, default=False)
+    resolved_at = Column(DateTime)
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+
+class ValidationRun(Base):
+    """Snapshot of each validation agent run."""
+
+    __tablename__ = "validation_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    overall_status = Column(String(20), nullable=False)  # healthy, degraded, critical
+    health_score = Column(Float, default=100.0)
+    checks_passed = Column(Integer, default=0)
+    checks_failed = Column(Integer, default=0)
+    accuracy_score = Column(Float)  # trade prediction accuracy 0-100
+    checks = Column(JSON)  # [{name, status, message, category}]
+    created_at = Column(DateTime, default=func.now(), index=True)

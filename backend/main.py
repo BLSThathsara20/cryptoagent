@@ -15,7 +15,8 @@ from data.backup import start_backup_scheduler, stop_backup_scheduler, run_auto_
 from autopilot.scheduler import start_autopilot_scheduler, stop_autopilot_scheduler
 from data.binance_ws import binance_ws_loop, stop_binance_ws
 from agent.loop import start_agent_loop, stop_agent_loop
-from routers import market, agent, trades, system, portfolio, alerts
+from agent.validator import start_validation_scheduler, stop_validation_scheduler, run_validation
+from routers import market, agent, trades, system, portfolio, alerts, llm, analytics, issues
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI):
     start_maintenance_scheduler()
     start_backup_scheduler()
     start_autopilot_scheduler()
+    start_validation_scheduler()
     asyncio.create_task(binance_ws_loop())
     start_agent_loop()
 
@@ -69,6 +71,15 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Initial validation run
+    db = SessionLocal()
+    try:
+        run_validation(db)
+    except Exception as e:
+        logger.warning("Initial validation run failed: %s", e)
+    finally:
+        db.close()
+
     logger.info("CryptoAgent ready")
     yield
 
@@ -78,6 +89,7 @@ async def lifespan(app: FastAPI):
     stop_maintenance_scheduler()
     stop_backup_scheduler()
     stop_autopilot_scheduler()
+    stop_validation_scheduler()
     stop_binance_ws()
     stop_agent_loop()
 
@@ -103,6 +115,9 @@ app.include_router(trades.router)
 app.include_router(system.router)
 app.include_router(portfolio.router)
 app.include_router(alerts.router)
+app.include_router(llm.router)
+app.include_router(analytics.router)
+app.include_router(issues.router)
 
 
 @app.get("/health")

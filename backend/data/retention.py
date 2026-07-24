@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import text, func
+from sqlalchemy import text, func, desc
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
@@ -96,13 +96,77 @@ def run_data_retention() -> dict:
         stats["portfolio_snapshots"] = _delete_older_than(
             db, PortfolioSnapshot, settings.retain_portfolio_snapshots_days, "created_at"
         )
-        # Read alerts older than N days
+
+        # Alerts: read ones gone immediately; stale unread past retention window
+        from alerts.manager import delete_read_alerts
+        stats["alerts_read"] = delete_read_alerts(db, commit=False)
         alert_cutoff = datetime.utcnow() - timedelta(days=settings.retain_alerts_days)
-        stats["alerts"] = (
+        stats["alerts_stale"] = (
             db.query(SystemAlert)
-            .filter(SystemAlert.created_at < alert_cutoff, SystemAlert.read.is_(True))
+            .filter(SystemAlert.created_at < alert_cutoff)
             .delete(synchronize_session=False)
         )
+
+        # LLM detailed logs older than 60 days
+        from db.models import LLMUsageLog, ValidationRun, SystemIssue, FundManagerDecision, AgentMemory, AgentDecision
+        llm_cutoff = datetime.utcnow() - timedelta(days=60)
+        stats["llm_usage_logs"] = (
+            db.query(LLMUsageLog).filter(LLMUsageLog.created_at < llm_cutoff).delete(synchronize_session=False)
+        )
+
+        # Keep only last 30 validation runs
+        old_runs = (
+            db.query(ValidationRun.id)
+            .order_by(desc(ValidationRun.created_at))
+            .offset(30)
+            .all()
+        )
+        if old_runs:
+            old_ids = [r.id for r in old_runs]
+            stats["validation_runs"] = (
+                db.query(ValidationRun).filter(ValidationRun.id.in_(old_ids)).delete(synchronize_session=False)
+            )
+        else:
+            stats["validation_runs"] = 0
+
+        # Resolved/dismissed issues older than 1 day (safety net)
+        issue_cutoff = datetime.utcnow() - timedelta(days=1)
+        stats["resolved_issues"] = (
+            db.query(SystemIssue)
+            .filter(SystemIssue.resolved.is_(True), SystemIssue.resolved_at < issue_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # Old fund manager decisions (keep 60 days)
+        fm_cutoff = datetime.utcnow() - timedelta(days=60)
+        stats["fund_manager_decisions"] = (
+            db.query(FundManagerDecision)
+            .filter(FundManagerDecision.created_at < fm_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # Cancelled trades older than 14 days
+        cancel_cutoff = datetime.utcnow() - timedelta(days=14)
+        stats["cancelled_trades"] = (
+            db.query(AgentDecision)
+            .filter(AgentDecision.status == "cancelled", AgentDecision.created_at < cancel_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # Cap agent memories — keep newest 200
+        mem_ids = (
+            db.query(AgentMemory.id)
+            .order_by(desc(AgentMemory.created_at))
+            .offset(200)
+            .all()
+        )
+        if mem_ids:
+            stats["agent_memories"] = (
+                db.query(AgentMemory).filter(AgentMemory.id.in_([m.id for m in mem_ids])).delete(synchronize_session=False)
+            )
+        else:
+            stats["agent_memories"] = 0
+
         db.commit()
 
         # Reclaim disk space (run weekly, lightweight enough daily too)

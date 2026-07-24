@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from config import settings
 from db.models import (
@@ -23,23 +23,22 @@ logger = logging.getLogger(__name__)
 def _latest_prices(db: Session, limit: int = 20) -> list[dict]:
     """Get latest price for each of top coins."""
     subq = (
-        db.query(CoinPrice.symbol, desc(CoinPrice.timestamp).label("max_ts"))
+        db.query(
+            CoinPrice.symbol,
+            func.max(CoinPrice.timestamp).label("max_ts"),
+        )
         .group_by(CoinPrice.symbol)
         .subquery()
     )
-    results = []
     coins = (
         db.query(CoinPrice)
-        .join(
-            subq,
-            (CoinPrice.symbol == subq.c.symbol),
-        )
+        .join(subq, (CoinPrice.symbol == subq.c.symbol) & (CoinPrice.timestamp == subq.c.max_ts))
         .filter(CoinPrice.timestamp >= datetime.utcnow() - timedelta(hours=1))
         .order_by(CoinPrice.rank)
         .limit(limit)
         .all()
     )
-    # Deduplicate by symbol, keep latest
+    results = []
     seen = set()
     for c in coins:
         if c.symbol not in seen:

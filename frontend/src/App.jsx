@@ -2,9 +2,12 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Agent from './pages/Agent';
+import Insights from './pages/Insights';
+import Issues from './pages/Issues';
 import Settings from './pages/Settings';
 import SystemStatusBar from './components/SystemStatusBar';
 import AlertBell from './components/AlertBell';
+import IssuesNavLink from './components/IssuesNavLink';
 
 function NavBar() {
   const linkClass = ({ isActive }) =>
@@ -23,6 +26,8 @@ function NavBar() {
       <div className="flex gap-2 items-center">
         <NavLink to="/" className={linkClass} end>Dashboard</NavLink>
         <NavLink to="/agent" className={linkClass}>Agent</NavLink>
+        <NavLink to="/insights" className={linkClass}>Insights</NavLink>
+        <IssuesNavLink linkClass={linkClass} />
         <NavLink to="/settings" className={linkClass}>Settings</NavLink>
         <AlertBell />
       </div>
@@ -39,6 +44,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/agent" element={<Agent />} />
+          <Route path="/insights" element={<Insights />} />
+          <Route path="/issues" element={<Issues />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>

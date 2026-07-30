@@ -280,6 +280,7 @@ curl http://localhost:8000/api/llm/usage
 | Live/mock toggle in UI | ✅ Complete |
 | Auto DB cleanup | ✅ Complete |
 | Multi-provider Gemini | ❌ Planned |
+| Explicit regime tagging + auto throttle | ✅ Complete |
 
 ---
 

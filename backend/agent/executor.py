@@ -33,9 +33,9 @@ def _get_or_create_paper_account(db: Session) -> PaperAccount:
     return account
 
 
-def _calculate_position_size(balance: float, entry: float, stop_loss: float) -> float:
-    """Calculate position size based on max risk percent."""
-    risk_amount = balance * (settings.max_risk_percent / 100)
+def _calculate_position_size(balance: float, entry: float, stop_loss: float, size_multiplier: float = 1.0) -> float:
+    """Calculate position size based on max risk percent and regime multiplier."""
+    risk_amount = balance * (settings.max_risk_percent / 100) * max(0.1, min(1.0, size_multiplier))
     risk_per_unit = abs(entry - stop_loss)
     if risk_per_unit <= 0:
         return 0
@@ -51,7 +51,8 @@ def execute_paper_trade(db: Session, decision: dict) -> AgentDecision | None:
     account = _get_or_create_paper_account(db)
     entry = float(decision["entry"])
     stop_loss = float(decision["stop_loss"])
-    position_size = _calculate_position_size(account.balance, entry, stop_loss)
+    size_mult = float(decision.get("size_multiplier") or 1.0)
+    position_size = _calculate_position_size(account.balance, entry, stop_loss, size_mult)
 
     if position_size <= 0:
         logger.error("Trade rejected: invalid position size")
@@ -66,6 +67,8 @@ def execute_paper_trade(db: Session, decision: dict) -> AgentDecision | None:
         "sl_percent": settings.trade_sl_percent,
         "tp_percent": settings.trade_tp_percent,
         "min_confidence": settings.min_confidence_to_trade,
+        "size_multiplier": size_mult,
+        "regime": decision.get("regime"),
     }
     # Pack signals + meta so history modal can show strategy used
     packed_signals = _json_safe({"signals": signals, "meta": meta})

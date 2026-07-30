@@ -55,7 +55,7 @@ export default function Insights() {
     return <div className="p-8 text-gray-500">Loading insights...</div>;
   }
 
-  const { trading, daily_pnl, wealth, predictions, learnings, next_action: na } = data;
+  const { trading, daily_pnl, wealth, predictions, learnings, next_action: na, regime } = data;
   const ls = LEARNING_STATUS[learnings?.status] || LEARNING_STATUS.idle;
   const todayPnl = daily_pnl?.today?.pnl ?? 0;
   const pnlSeries = (daily_pnl?.series || []).map((d) => ({
@@ -91,6 +91,51 @@ export default function Insights() {
         </div>
         <LiveTradingToggle />
       </div>
+
+      {regime?.regime && (
+        <div className={`card border ${
+          regime.allow_new_trades === false
+            ? 'border-accent-red/40 bg-red-900/10'
+            : regime.regime_shifted
+              ? 'border-accent-yellow/40 bg-yellow-900/10'
+              : 'border-dark-600'
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-300">Market Regime</h3>
+              <p className="text-lg font-bold mt-1">{regime.regime_label || regime.regime}</p>
+              {regime.previous_regime && regime.regime_shifted && (
+                <p className="text-xs text-accent-yellow mt-1">
+                  Shifted from {regime.previous_regime.replace('_', ' ')}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-4 text-center text-xs">
+              <div>
+                <div className="text-gray-500">Size</div>
+                <div className="font-bold">×{(regime.size_multiplier ?? 1).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">BTC 24h</div>
+                <div className={regime.btc_change_24h >= 0 ? 'text-accent-green' : 'text-accent-red'}>
+                  {regime.btc_change_24h >= 0 ? '+' : ''}{regime.btc_change_24h}%
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500">Learning Δ</div>
+                <div>{regime.learning_rate ?? regime.learning_drift?.learning_rate_today ?? 0}%</div>
+              </div>
+            </div>
+          </div>
+          {(regime.policy_notes?.length > 0) && (
+            <ul className="text-xs text-gray-400 mt-3 space-y-1">
+              {regime.policy_notes.map((n, i) => (
+                <li key={i}>• {n}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Agent next action */}
       {na && (

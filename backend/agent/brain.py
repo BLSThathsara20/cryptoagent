@@ -148,7 +148,12 @@ def _parse_decision(text: str) -> dict | None:
     return json.loads(text)
 
 
-def _validate_decision(decision: dict, db: Session) -> dict | None:
+def _regime_min_confidence(context: dict) -> float:
+    rp = context.get("regime_policy") or {}
+    return float(rp.get("min_confidence_effective") or settings.min_confidence_to_trade)
+
+
+def _validate_decision(decision: dict, db: Session, min_confidence: float | None = None) -> dict | None:
     required = ["coin", "direction", "entry", "take_profit", "stop_loss", "confidence", "reasoning"]
     for field in required:
         if field not in decision:
@@ -158,11 +163,12 @@ def _validate_decision(decision: dict, db: Session) -> dict | None:
         logger.error("LLM returned trade without stop_loss — rejected")
         return None
     decision = apply_scalp_levels(decision)
-    if float(decision.get("confidence") or 0) < settings.min_confidence_to_trade:
+    threshold = min_confidence if min_confidence is not None else settings.min_confidence_to_trade
+    if float(decision.get("confidence") or 0) < threshold:
         logger.info(
             "Decision below min confidence (%.1f < %.1f) — rejected",
             float(decision.get("confidence") or 0),
-            settings.min_confidence_to_trade,
+            threshold,
         )
         return None
     bt = backtest_setup(db, decision["coin"], decision["direction"])
@@ -234,7 +240,7 @@ async def _call_openai(context: dict, db: Session) -> dict | None:
         )
         text = response.choices[0].message.content or ""
         decision = _parse_decision(text)
-        return _validate_decision(decision, db)
+        return _validate_decision(decision, db, _regime_min_confidence(context))
     except Exception as e:
         record_llm_usage(
             db, "openai", settings.openai_model, 0, 0, success=False, error_message=str(e)[:500]
@@ -266,7 +272,7 @@ async def _call_claude(context: dict, db: Session) -> dict | None:
         )
         text = response.content[0].text.strip()
         decision = _parse_decision(text)
-        return _validate_decision(decision, db)
+        return _validate_decision(decision, db, _regime_min_confidence(context))
     except Exception as e:
         record_llm_usage(
             db, "claude", settings.claude_model, 0, 0, success=False, error_message=str(e)[:500]
@@ -364,7 +370,8 @@ def _fallback_decision(context: dict) -> dict | None:
         "backtest": {"valid": False, "win_rate": 0, "sample_size": 0},
     }
     decision = apply_scalp_levels(decision)
-    if float(decision["confidence"]) < settings.min_confidence_to_trade:
+    threshold = _regime_min_confidence(context)
+    if float(decision["confidence"]) < threshold:
         return None
     return decision
 

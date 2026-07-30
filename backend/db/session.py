@@ -48,6 +48,7 @@ def _ensure_indexes():
         "CREATE INDEX IF NOT EXISTS ix_system_issues_created ON system_issues (created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_agent_memories_created ON agent_memories (created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_portfolio_snapshots_created ON portfolio_snapshots (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_market_regime_logs_created ON market_regime_logs (created_at DESC)",
     ]
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for sql in indexes:

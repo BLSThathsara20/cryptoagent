@@ -268,9 +268,50 @@ def run_validation(db: Session | None = None) -> dict:
         elif accuracy >= 40:
             _resolve_issue(db, "Low Win Rate")
 
-        # Learning pipeline
+        # Learning pipeline + regime
         mem_count = db.query(AgentMemory).count()
         _add_check(checks, "Learning pipeline", True, f"{mem_count} lessons stored", "agent")
+
+        from agent.regime import get_latest_regime, get_learning_drift
+        regime = get_latest_regime(db)
+        drift = get_learning_drift(db)
+        if regime:
+            regime_ok = regime.get("allow_new_trades", True)
+            _add_check(
+                checks, "Market regime",
+                regime_ok,
+                f"{regime.get('regime_label')} · size ×{regime.get('size_multiplier', 1)}",
+                "trading",
+            )
+            if not regime_ok:
+                _upsert_issue(
+                    db, "trading", "warning", "Regime Pause Active",
+                    "; ".join(regime.get("policy_notes") or ["New entries paused"]),
+                )
+                issues_found += 1
+            elif regime.get("regime_shifted"):
+                _upsert_issue(
+                    db, "trading", "info", "Regime Shift Detected",
+                    f"Now {regime.get('regime_label')} — size reduced until stable",
+                )
+            else:
+                _resolve_issue(db, "Regime Pause Active")
+                _resolve_issue(db, "Regime Shift Detected")
+        if drift.get("drift_detected"):
+            _add_check(
+                checks, "Learning drift",
+                False,
+                f"{drift.get('negative_streak_days')}d negative learning rate",
+                "agent",
+            )
+            _upsert_issue(
+                db, "agent", "warning", "Learning Drift",
+                "Daily accuracy falling — stale lessons down-weighted, size reduced",
+            )
+            issues_found += 1
+        else:
+            _add_check(checks, "Learning drift", True, "Learning rate stable", "agent")
+            _resolve_issue(db, "Learning Drift")
 
         # Live mode readiness
         if settings.live_mode:

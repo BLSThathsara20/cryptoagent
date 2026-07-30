@@ -323,6 +323,26 @@ class DailyLearningStat(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
+class MarketRegimeLog(Base):
+    """Market regime snapshots — trend/chop/high-vol + policy applied each cycle."""
+
+    __tablename__ = "market_regime_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    regime = Column(String(20), nullable=False, index=True)
+    previous_regime = Column(String(20))
+    shifted = Column(Boolean, default=False)
+    btc_change_24h = Column(Float)
+    fear_greed = Column(Integer)
+    signal_avg = Column(Float)
+    signal_dispersion = Column(Float)
+    learning_rate = Column(Float)
+    size_multiplier = Column(Float, default=1.0)
+    allow_new_trades = Column(Boolean, default=True)
+    policy_notes = Column(JSON)
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+
 class MarketNews(Base):
     """Crypto news headlines for agent context — pruned aggressively."""
 

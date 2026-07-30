@@ -170,8 +170,16 @@ def run_data_retention() -> dict:
         else:
             stats["agent_memories"] = 0
 
+        from db.models import MarketNews, LearningFeatureSnapshot, PaperPnLHistory, LLMMonthlySpend, MarketRegimeLog
+
+        regime_cutoff = datetime.utcnow() - timedelta(days=settings.retain_regime_logs_days)
+        stats["market_regime_logs"] = (
+            db.query(MarketRegimeLog)
+            .filter(MarketRegimeLog.created_at < regime_cutoff)
+            .delete(synchronize_session=False)
+        )
+
         # Market news — keep recent headlines only
-        from db.models import MarketNews, LearningFeatureSnapshot, PaperPnLHistory, LLMMonthlySpend
 
         news_cutoff = datetime.utcnow() - timedelta(days=settings.retain_news_days)
         stats["market_news"] = (

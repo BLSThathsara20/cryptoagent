@@ -144,6 +144,14 @@ def build_market_context(db: Session) -> dict:
         for m in memories
     ]
 
+    from agent.regime import evaluate_regime_policy, filter_past_lessons
+
+    regime_policy = evaluate_regime_policy(db, {
+        "fear_greed": fear_greed,
+        "technical_signals": technical_signals,
+    })
+    past_lessons = filter_past_lessons(past_lessons, regime_policy)
+
     from data.news import recent_news_for_context
 
     try:
@@ -163,6 +171,7 @@ def build_market_context(db: Session) -> dict:
         "watch_coins": watch,
         "past_lessons": past_lessons,
         "recent_news": recent_news,
+        "regime_policy": regime_policy,
     }
 
 

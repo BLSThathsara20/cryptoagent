@@ -423,7 +423,7 @@ def get_agent_next_action(db: Session) -> dict:
         reasoning.append(
             f"Monitoring open {p.direction.upper()} {p.coin} — entry ${p.entry_price:.2f}, TP ${p.take_profit:.2f}, SL ${p.stop_loss:.2f}"
         )
-    elif fm and fm.action in ("reserve", "hold"):
+    elif fm and fm.action in ("reserve", "hold", "regime_caution"):
         next_action = "hold"
         reasoning.append(f"Fund Manager: {fm.action.upper()} — capital preserved")
     elif top and abs(top.get("signal_score") or 0) >= 35:
@@ -443,6 +443,14 @@ def get_agent_next_action(db: Session) -> dict:
             reasoning.append("Volume spike detected")
     else:
         reasoning.append("Scanning watchlist — waiting for confidence threshold on next cycle")
+
+    from agent.regime import get_latest_regime
+    regime = get_latest_regime(db)
+    if regime and not regime.get("allow_new_trades"):
+        next_action = "hold"
+        reasoning.insert(0, f"Regime pause: {regime.get('regime_label')} — no new entries")
+    elif regime and regime.get("regime_shifted"):
+        reasoning.insert(0, f"Regime shifted to {regime.get('regime_label')} — size reduced")
 
     if fm:
         reasoning.insert(0, f"Fund Manager: {fm.action.upper()} — {fm.reasoning[:120]}")
@@ -516,6 +524,7 @@ def get_agent_next_action(db: Session) -> dict:
             "confidence": last_decision.confidence,
             "created_at": last_decision.created_at.isoformat() if last_decision and last_decision.created_at else None,
         } if last_decision else None,
+        "regime": regime,
     }
 
 
@@ -529,4 +538,13 @@ def get_full_insights(db: Session) -> dict:
         "wealth": get_wealth_growth(db),
         "predictions": get_wealth_predictions(db),
         "learnings": get_learnings(db),
+        "regime": _get_regime_summary(db),
     }
+
+
+def _get_regime_summary(db: Session) -> dict:
+    from agent.regime import get_latest_regime, get_learning_drift
+
+    latest = get_latest_regime(db) or {}
+    drift = get_learning_drift(db)
+    return {**latest, "learning_drift": drift}

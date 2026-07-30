@@ -103,6 +103,26 @@ def _run_agent_cycle_sync() -> dict:
             logger.warning("Daily target check skipped: %s", tgt_err)
 
         context = build_market_context(db)
+        regime_policy = context.get("regime_policy") or {}
+
+        if not regime_policy.get("allow_new_trades", True):
+            logger.info("Regime policy paused new entries — %s", regime_policy.get("policy_notes"))
+            create_alert(
+                db, "warning", "trading", "Regime Pause — No New Trades",
+                "; ".join(regime_policy.get("policy_notes") or ["Market character shift — protecting capital"]),
+            )
+            agent_status = _get_or_create_status(db)
+            agent_status.last_run_at = datetime.utcnow()
+            agent_status.status = "monitoring"
+            db.commit()
+            return {"done": True}
+
+        if regime_policy.get("regime_shifted"):
+            create_alert(
+                db, "info", "trading", f"Regime Shift → {regime_policy.get('regime_label')}",
+                "; ".join(regime_policy.get("policy_notes") or [])[:400],
+            )
+
         context["fund_manager"] = fund_result["decision"]
         context["portfolio"] = {
             "total_usd": fund_result["portfolio"]["total_usd"],
@@ -210,6 +230,15 @@ async def run_agent_cycle():
         decisions.append(primary)
 
     ranked = rank_opportunities(context, decisions)
+    regime_policy = context.get("regime_policy") or {}
+    min_conf = float(regime_policy.get("min_confidence_effective") or settings.min_confidence_to_trade)
+
+    if ranked:
+        ranked = [d for d in ranked if float(d.get("confidence") or 0) >= min_conf]
+        for d in ranked:
+            d["size_multiplier"] = regime_policy.get("size_multiplier", 1.0)
+            d["regime"] = regime_policy.get("regime")
+
     if not ranked:
         logger.info("No trade opportunities found this cycle")
 

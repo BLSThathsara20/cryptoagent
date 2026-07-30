@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     retain_paper_pnl_days: int = int(os.getenv("RETAIN_PAPER_PNL_DAYS", "180"))
     retain_llm_monthly_months: int = int(os.getenv("RETAIN_LLM_MONTHLY_MONTHS", "4"))
 
+    # Regime shift — reduce size / pause when market character or learning drifts
+    regime_size_reduction_on_shift: float = float(os.getenv("REGIME_SIZE_REDUCTION_ON_SHIFT", "0.5"))
+    regime_min_confidence_boost_on_shift: float = float(os.getenv("REGIME_MIN_CONFIDENCE_BOOST", "10"))
+    regime_size_reduction_on_drift: float = float(os.getenv("REGIME_SIZE_REDUCTION_ON_DRIFT", "0.5"))
+    regime_confidence_boost_on_drift: float = float(os.getenv("REGIME_CONFIDENCE_BOOST_ON_DRIFT", "5"))
+    regime_learning_negative_days: int = int(os.getenv("REGIME_LEARNING_NEGATIVE_DAYS", "2"))
+    regime_learning_rate_negative_threshold: float = float(os.getenv("REGIME_LEARNING_RATE_THRESHOLD", "-5"))
+    regime_pause_accuracy_drop: float = float(os.getenv("REGIME_PAUSE_ACCURACY_DROP", "15"))
+    regime_drawdown_pause_pct: float = float(os.getenv("REGIME_DRAWDOWN_PAUSE_PCT", "20"))
+    regime_min_win_rate_pct: float = float(os.getenv("REGIME_MIN_WIN_RATE_PCT", "35"))
+    regime_lesson_cap_on_shift: int = int(os.getenv("REGIME_LESSON_CAP_ON_SHIFT", "3"))
+    regime_lesson_cap_on_drift: int = int(os.getenv("REGIME_LESSON_CAP_ON_DRIFT", "5"))
+    retain_regime_logs_days: int = int(os.getenv("RETAIN_REGIME_LOGS_DAYS", "14"))
+
     # WebSocket write throttling — reduces DB writes 10-100x
     orderbook_store_interval_sec: int = int(os.getenv("ORDERBOOK_STORE_INTERVAL_SEC", "5"))
     trade_store_interval_sec: float = float(os.getenv("TRADE_STORE_INTERVAL_SEC", "1"))

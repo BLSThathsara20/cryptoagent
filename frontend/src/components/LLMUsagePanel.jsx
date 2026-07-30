@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, postAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 const STATUS_STYLE = {
   connected: { dot: 'bg-accent-green', label: 'Connected', text: 'text-accent-green' },
@@ -12,13 +13,11 @@ export default function LLMUsagePanel() {
   const [usage, setUsage] = useState(null);
   const [testing, setTesting] = useState(false);
 
-  const load = () => fetchAPI('/llm/usage').then(setUsage).catch(console.error);
+  const load = async () => {
+    setUsage(await fetchAPI('/llm/usage'));
+  };
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(load, 15000);
 
   const testApi = async () => {
     setTesting(true);

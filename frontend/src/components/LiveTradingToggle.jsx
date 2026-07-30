@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, putAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function LiveTradingToggle({ compact = false, onChange }) {
   const [liveMode, setLiveMode] = useState(false);
@@ -8,23 +9,15 @@ export default function LiveTradingToggle({ compact = false, onChange }) {
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
-    try {
-      const [trading, system] = await Promise.all([
-        fetchAPI('/analytics/trading'),
-        fetchAPI('/system/status'),
-      ]);
-      setLiveMode(trading.live_mode);
-      setCanEnable(trading.can_enable_live ?? system?.configuration?.binance_configured);
-    } catch (e) {
-      console.error(e);
-    }
+    const [trading, system] = await Promise.all([
+      fetchAPI('/analytics/trading'),
+      fetchAPI('/system/status'),
+    ]);
+    setLiveMode(trading.live_mode);
+    setCanEnable(trading.can_enable_live ?? system?.configuration?.binance_configured);
   };
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(load, 10000);
 
   const setMode = async (live) => {
     setLoading(true);

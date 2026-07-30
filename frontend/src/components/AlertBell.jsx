@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAPI, postAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 const LEVEL_STYLES = {
   info: 'border-l-accent-blue bg-blue-900/10',
@@ -22,20 +23,12 @@ export default function AlertBell() {
   const ref = useRef(null);
 
   const load = async () => {
-    try {
-      const data = await fetchAPI('/alerts?limit=30');
-      setAlerts(data.alerts || []);
-      setUnread(data.unread_count || 0);
-    } catch (e) {
-      console.error(e);
-    }
+    const data = await fetchAPI('/alerts?limit=30');
+    setAlerts(data.alerts || []);
+    setUnread(data.unread_count || 0);
   };
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(load, 5000);
 
   useEffect(() => {
     const handler = (e) => {

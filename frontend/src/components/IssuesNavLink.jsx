@@ -1,16 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { fetchAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function IssuesNavLink({ linkClass }) {
   const [count, setCount] = useState(0);
 
-  useEffect(() => {
-    const load = () => fetchAPI('/issues').then((d) => setCount(d.open_count || 0)).catch(() => {});
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    const d = await fetchAPI('/issues');
+    setCount(d.open_count || 0);
+  }, 10000);
 
   return (
     <NavLink to="/issues" className={linkClass}>

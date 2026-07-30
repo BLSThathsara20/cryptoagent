@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 const COLORS = {
   'Extreme Fear': '#ef4444',
@@ -12,12 +13,9 @@ const COLORS = {
 export default function FearGreedIndex() {
   const [data, setData] = useState({ value: 50, classification: 'Neutral' });
 
-  useEffect(() => {
-    const load = () => fetchAPI('/market/fear-greed').then(setData).catch(console.error);
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    setData(await fetchAPI('/market/fear-greed'));
+  }, 15000);
 
   const color = COLORS[data.classification] || '#6b7280';
 

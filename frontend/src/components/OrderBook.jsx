@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, formatPrice } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function OrderBook({ symbol = 'BTC' }) {
   const [book, setBook] = useState({ bids: [], asks: [] });
 
-  useEffect(() => {
-    const load = () => fetchAPI(`/market/orderbook/${symbol}`).then(setBook).catch(console.error);
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [symbol]);
+  usePolling(async () => {
+    setBook(await fetchAPI(`/market/orderbook/${symbol}`));
+  }, 3000, [symbol]);
 
   const maxQty = Math.max(
     ...book.bids.map((b) => b.quantity),

@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, formatNumber } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function LiquidationTable() {
   const [liquidations, setLiquidations] = useState([]);
 
-  useEffect(() => {
-    const load = () => fetchAPI('/market/liquidations?limit=20').then(setLiquidations).catch(console.error);
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    setLiquidations(await fetchAPI('/market/liquidations?limit=20'));
+  }, 10000);
 
   return (
     <div className="card">

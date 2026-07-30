@@ -29,6 +29,23 @@ class Settings(BaseSettings):
     max_allocation_per_coin: float = float(os.getenv("MAX_ALLOCATION_PER_COIN", "25"))
     daily_profit_target_percent: float = float(os.getenv("DAILY_PROFIT_TARGET_PERCENT", "0.5"))
 
+    # Trading style — short holds, tight levels, limited concurrent risk
+    max_open_trades: int = int(os.getenv("MAX_OPEN_TRADES", "2"))
+    max_hold_minutes: int = int(os.getenv("MAX_HOLD_MINUTES", "30"))
+    trade_sl_percent: float = float(os.getenv("TRADE_SL_PERCENT", "0.8"))
+    trade_tp_percent: float = float(os.getenv("TRADE_TP_PERCENT", "1.2"))
+    min_confidence_to_trade: float = float(os.getenv("MIN_CONFIDENCE_TO_TRADE", "55"))
+    stop_new_trades_when_target_hit: bool = (
+        os.getenv("STOP_NEW_TRADES_WHEN_TARGET_HIT", "true").lower() == "true"
+    )
+
+    # OpenAI cost control — selective by default (rules first, LLM only when needed)
+    llm_mode: str = os.getenv("LLM_MODE", "selective")  # selective | always | rules_only
+    llm_cooldown_sec: int = int(os.getenv("LLM_COOLDOWN_SEC", "900"))
+    llm_min_signal: float = float(os.getenv("LLM_MIN_SIGNAL", "25"))
+    llm_strong_signal: float = float(os.getenv("LLM_STRONG_SIGNAL", "45"))
+    llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "350"))
+
     # Long-run data retention (days) — prevents DB from growing forever
     retain_orderbook_days: int = int(os.getenv("RETAIN_ORDERBOOK_DAYS", "7"))
     retain_live_trades_days: int = int(os.getenv("RETAIN_LIVE_TRADES_DAYS", "7"))
@@ -36,6 +53,10 @@ class Settings(BaseSettings):
     retain_market_meta_days: int = int(os.getenv("RETAIN_MARKET_META_DAYS", "90"))
     retain_alerts_days: int = int(os.getenv("RETAIN_ALERTS_DAYS", "30"))
     retain_portfolio_snapshots_days: int = int(os.getenv("RETAIN_PORTFOLIO_SNAPSHOTS_DAYS", "30"))
+    retain_news_days: int = int(os.getenv("RETAIN_NEWS_DAYS", "14"))
+    retain_feature_snapshots: int = int(os.getenv("RETAIN_FEATURE_SNAPSHOTS", "2000"))
+    retain_paper_pnl_days: int = int(os.getenv("RETAIN_PAPER_PNL_DAYS", "180"))
+    retain_llm_monthly_months: int = int(os.getenv("RETAIN_LLM_MONTHLY_MONTHS", "4"))
 
     # WebSocket write throttling — reduces DB writes 10-100x
     orderbook_store_interval_sec: int = int(os.getenv("ORDERBOOK_STORE_INTERVAL_SEC", "5"))

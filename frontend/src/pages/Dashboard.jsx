@@ -8,6 +8,7 @@ import LiquidationTable from '../components/LiquidationTable';
 import LongShortRatio from '../components/LongShortRatio';
 import DominanceGauge from '../components/DominanceGauge';
 import FearGreedIndex from '../components/FearGreedIndex';
+import DecisionGlowBanner from '../components/DecisionGlowBanner';
 
 const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
 
@@ -16,17 +17,16 @@ export default function Dashboard() {
 
   return (
     <div>
+      <DecisionGlowBanner />
       <PriceTicker />
 
       <div className="p-4 space-y-4 max-w-[1600px] mx-auto">
-        {/* Top metrics row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FearGreedIndex />
           <DominanceGauge />
           <LongShortRatio />
         </div>
 
-        {/* Coin selector */}
         <div className="flex gap-2 flex-wrap">
           {COINS.map((coin) => (
             <button
@@ -43,7 +43,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Chart + Order book */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <CandlestickChart symbol={selectedCoin} />
@@ -54,7 +53,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bottom row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <MarketTable onSelectCoin={setSelectedCoin} />
           <LiquidationTable />

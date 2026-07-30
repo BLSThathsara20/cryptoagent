@@ -269,3 +269,71 @@ class ValidationRun(Base):
     accuracy_score = Column(Float)  # trade prediction accuracy 0-100
     checks = Column(JSON)  # [{name, status, message, category}]
     created_at = Column(DateTime, default=func.now(), index=True)
+
+
+class LearningFeatureSnapshot(Base):
+    """Compact feature vector at decision time — training fuel for the local learner."""
+
+    __tablename__ = "learning_feature_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    decision_id = Column(Integer, index=True, nullable=False)
+    coin = Column(String(20), nullable=False, index=True)
+    direction = Column(String(10), nullable=False)
+    confidence = Column(Float)
+    features = Column(JSON, nullable=False)
+    outcome = Column(String(10))
+    pnl = Column(Float)
+    special = Column(Boolean, default=False)
+    special_reason = Column(String(200))
+    created_at = Column(DateTime, default=func.now(), index=True)
+    labeled_at = Column(DateTime)
+
+
+class LocalModelWeights(Base):
+    """Online-updated local model weights (day-by-day learning)."""
+
+    __tablename__ = "local_model_weights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False, index=True)
+    weights = Column(JSON, nullable=False, default=dict)
+    samples = Column(Integer, default=0)
+    version = Column(Integer, default=1)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class DailyLearningStat(Base):
+    """Per-day learning / accuracy footprint."""
+
+    __tablename__ = "daily_learning_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    day = Column(String(10), unique=True, nullable=False, index=True)
+    trades_closed = Column(Integer, default=0)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    accuracy_percent = Column(Float, default=0.0)
+    learning_rate = Column(Float, default=0.0)
+    memories_added = Column(Integer, default=0)
+    snapshots_labeled = Column(Integer, default=0)
+    special_events = Column(Integer, default=0)
+    pnl = Column(Float, default=0.0)
+    notes = Column(JSON)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class MarketNews(Base):
+    """Crypto news headlines for agent context — pruned aggressively."""
+
+    __tablename__ = "market_news"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_id = Column(String(64), unique=True, index=True)
+    title = Column(String(500), nullable=False)
+    url = Column(String(1000))
+    source = Column(String(100))
+    categories = Column(String(200))
+    currencies = Column(String(200))
+    published_at = Column(DateTime, index=True)
+    created_at = Column(DateTime, default=func.now(), index=True)

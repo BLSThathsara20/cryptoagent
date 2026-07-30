@@ -8,7 +8,7 @@ from config import settings
 from db.session import get_db
 from db.models import PortfolioSnapshot, FundManagerDecision
 from agent.fund_manager import get_portfolio, run_fund_manager_cycle
-from agent.binance_client import is_configured
+from agent.binance_client import diagnose_binance
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -17,9 +17,11 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 def get_holdings(db: Session = Depends(get_db)):
     """Current fund allocation — Binance if connected, else paper."""
     portfolio = get_portfolio(db)
+    diag = diagnose_binance(force=False)
     return {
         **portfolio,
-        "binance_connected": is_configured(),
+        "binance_connected": bool(diag.get("account_ok")),
+        "binance_market_ok": bool(diag.get("market_ok")),
         "live_mode": settings.live_mode,
         "reserve_percent": settings.fund_reserve_percent,
         "max_allocation_per_coin": settings.max_allocation_per_coin,

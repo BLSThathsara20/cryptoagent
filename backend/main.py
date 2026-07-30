@@ -13,10 +13,10 @@ from data.ingestion import start_ingestion_scheduler, stop_ingestion_scheduler, 
 from data.retention import start_maintenance_scheduler, stop_maintenance_scheduler
 from data.backup import start_backup_scheduler, stop_backup_scheduler, run_auto_backup
 from autopilot.scheduler import start_autopilot_scheduler, stop_autopilot_scheduler
-from data.binance_ws import binance_ws_loop, stop_binance_ws
+from data.binance_ws import start_binance_ws, stop_binance_ws
 from agent.loop import start_agent_loop, stop_agent_loop
 from agent.validator import start_validation_scheduler, stop_validation_scheduler, run_validation
-from routers import market, agent, trades, system, portfolio, alerts, llm, analytics, issues
+from routers import market, agent, trades, system, portfolio, alerts, llm, analytics, issues, learning
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     start_backup_scheduler()
     start_autopilot_scheduler()
     start_validation_scheduler()
-    asyncio.create_task(binance_ws_loop())
+    start_binance_ws()
     start_agent_loop()
 
     # Run initial data fetch + first backup after startup
@@ -47,21 +47,27 @@ async def lifespan(app: FastAPI):
     # Test Binance + welcome alert
     from db.session import SessionLocal
     from alerts.manager import create_alert
-    from agent.binance_client import is_configured, fetch_spot_balances
+    from agent.binance_client import is_configured, diagnose_binance
     db = SessionLocal()
     try:
         if is_configured():
-            bal = fetch_spot_balances()
-            if bal:
+            diag = diagnose_binance(force=True)
+            if diag.get("account_ok"):
                 create_alert(
                     db, "success", "binance", "Binance API Connected",
-                    f"Reading {len(bal)} assets from your account. "
+                    f"{diag.get('message')}. "
                     f"Trading mode: {'LIVE' if settings.live_mode else 'PAPER (mock trades only)'}.",
+                )
+            elif diag.get("market_ok"):
+                create_alert(
+                    db, "warning", "binance", "Binance Account API Issue",
+                    (diag.get("hint") or diag.get("message") or "Account check failed")
+                    + " Market WebSocket still works. Paper trading continues.",
                 )
             else:
                 create_alert(
-                    db, "error", "binance", "Binance Connection Failed",
-                    "Keys found but connection failed. Check permissions (Enable Reading) and IP whitelist.",
+                    db, "error", "binance", "Binance Unreachable",
+                    diag.get("message") or "Public market check failed — likely offline.",
                 )
         create_alert(
             db, "success", "system", "Autopilot Active",
@@ -118,6 +124,7 @@ app.include_router(alerts.router)
 app.include_router(llm.router)
 app.include_router(analytics.router)
 app.include_router(issues.router)
+app.include_router(learning.router)
 
 
 @app.get("/health")

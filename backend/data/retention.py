@@ -38,6 +38,9 @@ def get_maintenance_status() -> dict:
             "market_meta_days": settings.retain_market_meta_days,
             "alerts_days": settings.retain_alerts_days,
             "portfolio_snapshots_days": settings.retain_portfolio_snapshots_days,
+            "news_days": settings.retain_news_days,
+            "feature_snapshots_cap": settings.retain_feature_snapshots,
+            "paper_pnl_days": settings.retain_paper_pnl_days,
         },
     }
 
@@ -166,6 +169,65 @@ def run_data_retention() -> dict:
             )
         else:
             stats["agent_memories"] = 0
+
+        # Market news — keep recent headlines only
+        from db.models import MarketNews, LearningFeatureSnapshot, PaperPnLHistory, LLMMonthlySpend
+
+        news_cutoff = datetime.utcnow() - timedelta(days=settings.retain_news_days)
+        stats["market_news"] = (
+            db.query(MarketNews)
+            .filter(MarketNews.created_at < news_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # Feature snapshots: always keep specials; cap the rest to newest N
+        keep_ids = {
+            r.id
+            for r in db.query(LearningFeatureSnapshot.id)
+            .filter(LearningFeatureSnapshot.special.is_(True))
+            .all()
+        }
+        newest = (
+            db.query(LearningFeatureSnapshot.id)
+            .order_by(desc(LearningFeatureSnapshot.created_at))
+            .limit(settings.retain_feature_snapshots)
+            .all()
+        )
+        keep_ids.update(r.id for r in newest)
+        if keep_ids:
+            stats["feature_snapshots"] = (
+                db.query(LearningFeatureSnapshot)
+                .filter(~LearningFeatureSnapshot.id.in_(keep_ids))
+                .delete(synchronize_session=False)
+            )
+        else:
+            stats["feature_snapshots"] = 0
+
+        # Paper PnL history
+        pnl_cutoff = datetime.utcnow() - timedelta(days=settings.retain_paper_pnl_days)
+        stats["paper_pnl_history"] = (
+            db.query(PaperPnLHistory)
+            .filter(PaperPnLHistory.timestamp < pnl_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # LLM monthly spend older than N months
+        month_cutoff = (datetime.utcnow() - timedelta(days=30 * settings.retain_llm_monthly_months)).strftime("%Y-%m")
+        stats["llm_monthly_spend"] = (
+            db.query(LLMMonthlySpend)
+            .filter(LLMMonthlySpend.year_month < month_cutoff)
+            .delete(synchronize_session=False)
+        )
+
+        # Daily learning stats older than 365 days
+        from db.models import DailyLearningStat
+
+        day_cutoff = (datetime.utcnow() - timedelta(days=365)).strftime("%Y-%m-%d")
+        stats["daily_learning_stats"] = (
+            db.query(DailyLearningStat)
+            .filter(DailyLearningStat.day < day_cutoff)
+            .delete(synchronize_session=False)
+        )
 
         db.commit()
 

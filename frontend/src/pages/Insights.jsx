@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { fetchAPI, formatPrice } from '../api';
 import LiveTradingToggle from '../components/LiveTradingToggle';
+import { usePolling, useNow, formatCountdown, secondsUntil, isAgentBusy } from '../hooks/useLive';
+import { useLivePulse } from '../LivePulseContext';
 
 const LEARNING_STATUS = {
   active: { color: 'text-accent-green', bg: 'bg-accent-green/20', label: 'Learning Today' },
@@ -39,14 +41,15 @@ function ChartTooltip({ active, payload, label, prefix = '$' }) {
 export default function Insights() {
   const [data, setData] = useState(null);
   const [expandedDate, setExpandedDate] = useState(null);
+  const [fetchedAt, setFetchedAt] = useState(Date.now());
+  const now = useNow(1000);
+  const { pulse, nextIn: pulseNextIn } = useLivePulse();
 
-  const load = () => fetchAPI('/analytics/overview').then(setData).catch(console.error);
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 20000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    const d = await fetchAPI('/analytics/overview');
+    setData(d);
+    setFetchedAt(Date.now());
+  }, 8000);
 
   if (!data) {
     return <div className="p-8 text-gray-500">Loading insights...</div>;
@@ -59,6 +62,19 @@ export default function Insights() {
     ...d,
     label: d.date.slice(5),
   }));
+
+  // Live countdown — prefer pulse, else next_run_at from overview, else static seconds
+  const stageBusy = isAgentBusy(pulse?.agent?.stage);
+  let liveNext = pulseNextIn;
+  if (liveNext == null && na?.next_run_at) {
+    liveNext = secondsUntil(na.next_run_at, now);
+  }
+  if (liveNext == null && na?.seconds_until_next_cycle != null) {
+    // Decay the API snapshot second-by-second until the next poll
+    const elapsed = Math.floor((now - fetchedAt) / 1000);
+    liveNext = Math.max(0, na.seconds_until_next_cycle - elapsed);
+  }
+  const nextDisplay = stageBusy ? 'running…' : formatCountdown(liveNext);
   const wealthSeries = (wealth?.series || []).map((w, i) => ({
     label: w.timestamp ? new Date(w.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : `#${i}`,
     value: w.value,
@@ -114,13 +130,11 @@ export default function Insights() {
               </p>
             </div>
             <div className="lg:w-72 shrink-0 space-y-3">
-              {na.seconds_until_next_cycle != null && (
+              {(na.next_run_at != null || na.seconds_until_next_cycle != null || pulseNextIn != null) && (
                 <div className="bg-dark-700/50 rounded-lg p-3 text-center">
                   <div className="text-xs text-gray-500">Next cycle in</div>
-                  <div className="text-lg font-bold">
-                    {na.seconds_until_next_cycle >= 60
-                      ? `${Math.floor(na.seconds_until_next_cycle / 60)}m ${na.seconds_until_next_cycle % 60}s`
-                      : `${na.seconds_until_next_cycle}s`}
+                  <div className="text-lg font-bold tabular-nums text-white">
+                    {nextDisplay}
                   </div>
                 </div>
               )}
@@ -258,7 +272,13 @@ export default function Insights() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <StatCard
+            label="Today P&L"
+            value={`${todayPnl >= 0 ? '+' : ''}${formatPrice(todayPnl)}`}
+            sub={`${daily_pnl?.today?.wins ?? 0}W / ${daily_pnl?.today?.losses ?? 0}L`}
+            color={todayPnl >= 0 ? 'text-accent-green' : 'text-accent-red'}
+          />
           <StatCard label="Total Lessons" value={learnings?.total_lessons ?? 0} />
           <StatCard label="From Wins" value={learnings?.win_lessons ?? 0} color="text-accent-green" />
           <StatCard label="From Losses" value={learnings?.loss_lessons ?? 0} color="text-accent-red" />
@@ -268,6 +288,11 @@ export default function Insights() {
         <div className="mb-4">
           <h4 className="text-xs font-medium text-gray-400 mb-2">
             Today ({learnings?.today?.date}) — {learnings?.today?.count ?? 0} lesson(s)
+            {learnings?.today?.pnl != null && (
+              <span className={`ml-2 ${learnings.today.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                · P&L {formatPrice(learnings.today.pnl)}
+              </span>
+            )}
           </h4>
           {(learnings?.today?.lessons?.length ?? 0) === 0 ? (
             <p className="text-xs text-gray-600 bg-dark-700/30 rounded-lg p-3">

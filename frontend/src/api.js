@@ -1,29 +1,49 @@
 const API_BASE = '/api';
 
-export async function fetchAPI(path) {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+/** Default request timeout — prevents hung polls from freezing the UI forever. */
+const DEFAULT_TIMEOUT_MS = 8000;
+
+async function request(path, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-export async function postAPI(path, body = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+export async function fetchAPI(path, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  return request(path, {}, timeoutMs);
 }
 
-export async function putAPI(path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+export async function postAPI(path, body = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  return request(
+    path,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs
+  );
+}
+
+export async function putAPI(path, body, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  return request(
+    path,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs
+  );
 }
 
 export function formatPrice(price) {

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, formatPrice, formatNumber } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 const ACTION_COLORS = {
   hold: 'text-gray-300 bg-dark-700',
@@ -13,40 +14,17 @@ export default function FundManagerPanel() {
   const [holdings, setHoldings] = useState(null);
   const [decision, setDecision] = useState(null);
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
-    try {
-      const [h, d, hist] = await Promise.all([
-        fetchAPI('/portfolio/holdings'),
-        fetchAPI('/portfolio/fund-manager/latest'),
-        fetchAPI('/portfolio/fund-manager/history?limit=5'),
-      ]);
-      setHoldings(h);
-      setDecision(d);
-      setHistory(hist);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 20000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const runNow = async () => {
-    setLoading(true);
-    try {
-      await postAPI('/portfolio/fund-manager/run');
-      await load();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  usePolling(async () => {
+    const [h, d, hist] = await Promise.all([
+      fetchAPI('/portfolio/holdings'),
+      fetchAPI('/portfolio/fund-manager/latest'),
+      fetchAPI('/portfolio/fund-manager/history?limit=5'),
+    ]);
+    setHoldings(h);
+    setDecision(d);
+    setHistory(hist);
+  }, 8000);
 
   if (!holdings) {
     return <div className="card text-gray-500 text-sm">Loading fund manager...</div>;
@@ -64,25 +42,20 @@ export default function FundManagerPanel() {
           <div>
             <h3 className="text-sm font-semibold text-gray-300">Fund Manager Agent</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Reads your Binance balances · Trades: {holdings.trading_mode === 'live' ? 'LIVE' : 'PAPER (mock)'}
+              Runs every agent cycle · Trades: {holdings.trading_mode === 'live' ? 'LIVE' : 'PAPER (mock)'}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {holdings.binance_connected ? (
               <span className="badge-green text-xs">Binance Connected</span>
+            ) : holdings.binance_market_ok ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-yellow-900/30 text-accent-yellow">Market OK · account offline</span>
             ) : (
-              <span className="text-xs px-2 py-0.5 rounded bg-yellow-900/30 text-accent-yellow">No API Keys</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-yellow-900/30 text-accent-yellow">Binance unreachable</span>
             )}
-            {holdings.trading_mode === 'paper' && holdings.binance_connected && (
+            {holdings.trading_mode === 'paper' && (
               <span className="text-xs px-2 py-0.5 rounded bg-blue-900/30 text-accent-blue">Paper Trading</span>
             )}
-            <button
-              onClick={runNow}
-              disabled={loading}
-              className="px-3 py-1 text-xs bg-dark-700 hover:bg-dark-600 rounded disabled:opacity-50"
-            >
-              {loading ? 'Running...' : 'Analyze Now'}
-            </button>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchAPI, postAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 const SEVERITY = {
   critical: { dot: 'bg-red-500', badge: 'bg-red-900/40 text-red-400', label: 'Critical' },
@@ -45,11 +46,7 @@ export default function Issues() {
 
   const load = () => fetchAPI('/issues').then(setData).catch(console.error);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 20000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(load, 8000);
 
   const runValidation = async () => {
     setValidating(true);

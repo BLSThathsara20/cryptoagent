@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function DominanceGauge() {
   const [data, setData] = useState({ btc_dominance: 0, eth_dominance: 0 });
 
-  useEffect(() => {
-    const load = () => fetchAPI('/market/dominance').then(setData).catch(console.error);
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    setData(await fetchAPI('/market/dominance'));
+  }, 15000);
 
   const Gauge = ({ label, value, color }) => (
     <div className="text-center">

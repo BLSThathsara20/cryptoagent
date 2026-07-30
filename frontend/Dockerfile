@@ -1,9 +1,9 @@
-FROM node:18-alpine
+FROM node:18-bookworm-slim
 
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install && npm install @rollup/rollup-linux-x64-gnu --no-save
 
 COPY . .
 

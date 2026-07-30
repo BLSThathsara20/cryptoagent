@@ -1,17 +1,11 @@
-import { useState, useEffect } from 'react';
-import { fetchAPI, formatPrice, formatPercent, formatNumber } from '../api';
+import { useState } from 'react';
+import { formatPrice, formatPercent, formatNumber } from '../api';
+import { useLivePulse } from '../LivePulseContext';
 
 export default function MarketTable({ onSelectCoin }) {
-  const [coins, setCoins] = useState([]);
+  const { prices: coins } = useLivePulse();
   const [sortBy, setSortBy] = useState('rank');
   const [sortDir, setSortDir] = useState('asc');
-
-  useEffect(() => {
-    const load = () => fetchAPI('/market/prices?limit=20').then(setCoins).catch(console.error);
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleSort = (field) => {
     if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');

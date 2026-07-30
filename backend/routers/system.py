@@ -21,6 +21,7 @@ from db.models import (
     AgentMemory,
     PaperAccount,
 )
+from agent.loop import is_agent_loop_running
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -146,6 +147,7 @@ def get_system_status(db: Session = Depends(get_db)):
         "ingestion_scheduler": ingestion,
         "agent": {
             "status": agent_row.status if agent_row else "idle",
+            "loop_running": is_agent_loop_running(),
             "last_run_at": _iso(agent_row.last_run_at if agent_row else None),
             "decisions_total": db.query(func.count(AgentDecision.id)).scalar() or 0,
             "decisions_24h": _count_since(db, AgentDecision, hours=24),
@@ -157,6 +159,35 @@ def get_system_status(db: Session = Depends(get_db)):
         "maintenance": get_maintenance_status(),
         "backup": get_backup_status(),
         "autopilot": get_autopilot_status(db),
+    }
+
+
+@router.get("/pulse")
+def get_system_pulse(db: Session = Depends(get_db)):
+    """Lightweight live/offline + agent stage + data saved (for the top bar)."""
+    from data.connectivity import build_live_pulse
+    return build_live_pulse(db)
+
+
+@router.post("/recover")
+async def recover_services():
+    """
+    Kick WebSocket + Binance diagnose + ingestion after coming back online.
+    Safe to call from the UI when the browser fires the `online` event.
+    """
+    from autopilot.scheduler import recover_after_offline
+    await recover_after_offline()
+    from data.binance_ws import get_ws_status
+    from data.ingestion import get_ingestion_status
+    from agent.binance_client import diagnose_binance
+    from agent.binance_client import diagnose_binance
+    from agent.loop import is_agent_loop_running
+    return {
+        "ok": True,
+        "websocket": get_ws_status(),
+        "ingestion": get_ingestion_status(),
+        "binance": diagnose_binance(cache_only=True),
+        "agent_loop_running": is_agent_loop_running(),
     }
 
 

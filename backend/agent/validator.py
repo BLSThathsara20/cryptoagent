@@ -21,7 +21,7 @@ from db.models import (
 from data.binance_ws import get_ws_status
 from data.ingestion import get_ingestion_status
 from data.retention import get_database_stats
-from agent.binance_client import is_configured, fetch_spot_balances
+from agent.binance_client import is_configured, diagnose_binance
 from agent.llm_usage import test_openai_connection, get_current_month_spend
 from alerts.manager import create_alert
 
@@ -154,18 +154,45 @@ def run_validation(db: Session | None = None) -> dict:
             _add_check(checks, "Market data freshness", False, "No price data", "data")
             issues_found += 1
 
-        # Binance API
-        if is_configured():
-            bal = fetch_spot_balances()
-            binance_ok = bal is not None
-            _add_check(checks, "Binance API", binance_ok, "Connected" if binance_ok else "Connection failed", "binance")
-            if not binance_ok:
-                _upsert_issue(db, "binance", "error", "Binance API Failed", "Check API key permissions and IP whitelist.")
-                issues_found += 1
-            else:
-                _resolve_issue(db, "Binance API Failed")
+        # Binance — market (public) vs account (private). Paper mode: account fail is warning only.
+        diag = diagnose_binance(force=True)
+        if diag.get("market_ok"):
+            _add_check(checks, "Binance market", True, "Public market reachable", "binance")
         else:
-            _add_check(checks, "Binance API", True, "Not configured (paper mode OK)", "binance")
+            _add_check(checks, "Binance market", False, diag.get("message", "Unreachable"), "binance")
+            issues_found += 1
+
+        if is_configured():
+            if diag.get("account_ok"):
+                _add_check(checks, "Binance account", True, diag.get("message", "Connected"), "binance")
+                _resolve_issue(db, "Binance API Failed")
+                _resolve_issue(db, "Binance Account API")
+            elif not settings.live_mode:
+                # Paper mode: account/IP glitches must not open Issues or degrade health
+                _add_check(
+                    checks,
+                    "Binance account",
+                    True,
+                    "Paper mode OK — account API has a glitch (IP/key). Live trading still blocked until fixed.",
+                    "binance",
+                )
+                _resolve_issue(db, "Binance API Failed")
+                _resolve_issue(db, "Binance Account API")
+            else:
+                _add_check(
+                    checks, "Binance account", False,
+                    diag.get("hint") or diag.get("message") or "Account API failed",
+                    "binance",
+                )
+                _upsert_issue(
+                    db, "binance", "error", "Binance Account API",
+                    diag.get("hint") or "Check API key permissions and IP whitelist.",
+                )
+                issues_found += 1
+        else:
+            _add_check(checks, "Binance account", True, "Not configured (paper mode OK)", "binance")
+            _resolve_issue(db, "Binance Account API")
+            _resolve_issue(db, "Binance API Failed")
 
         # OpenAI / LLM
         if settings.llm_configured:
@@ -199,15 +226,25 @@ def run_validation(db: Session | None = None) -> dict:
 
         # Agent loop
         agent = db.query(AgentStatus).first()
+        from agent.loop import is_agent_loop_running
+
+        loop_alive = is_agent_loop_running()
         if agent and agent.last_run_at:
             gap = (datetime.utcnow() - agent.last_run_at.replace(tzinfo=None)).total_seconds()
-            agent_ok = gap < settings.agent_loop_interval * 3
-            _add_check(checks, "Agent loop", agent_ok, f"Last run {int(gap)}s ago", "agent")
+            agent_ok = gap < settings.agent_loop_interval * 3 and loop_alive
+            msg = f"Last run {int(gap)}s ago"
+            if not loop_alive:
+                msg += " — loop task dead (auto-recovery will restart)"
+            _add_check(checks, "Agent loop", agent_ok, msg, "agent")
             if not agent_ok:
                 _upsert_issue(db, "agent", "warning", "Agent Overdue", f"Last cycle {int(gap // 60)} min ago.")
                 issues_found += 1
             else:
                 _resolve_issue(db, "Agent Overdue")
+        elif not loop_alive:
+            _add_check(checks, "Agent loop", False, "Loop task not running", "agent")
+            _upsert_issue(db, "agent", "warning", "Agent Overdue", "Agent loop task stopped — recovery will restart it.")
+            issues_found += 1
         else:
             _add_check(checks, "Agent loop", False, "Never run", "agent")
 
@@ -357,6 +394,21 @@ async def scheduled_validation():
     db = SessionLocal()
     try:
         run_validation(db)
+        from agent.loop import ensure_agent_loop_running, is_agent_loop_running, trigger_agent_cycle_now
+
+        if not is_agent_loop_running():
+            if ensure_agent_loop_running():
+                create_alert(
+                    db, "warning", "system", "Agent Loop Restarted",
+                    "Agent loop task had stopped — restarted automatically.",
+                    commit=True,
+                )
+        # If overdue but task alive, kick a cycle (existing autopilot path also covers this)
+        agent = db.query(AgentStatus).first()
+        if agent and agent.last_run_at and settings.auto_recovery_enabled:
+            gap = (datetime.utcnow() - agent.last_run_at.replace(tzinfo=None)).total_seconds()
+            if gap > settings.agent_loop_interval * 3:
+                await trigger_agent_cycle_now()
         logger.info("Validation agent completed")
     except Exception as e:
         logger.error("Scheduled validation failed: %s", e)
@@ -368,13 +420,13 @@ def start_validation_scheduler():
     scheduler.add_job(
         scheduled_validation,
         "interval",
-        minutes=15,
+        minutes=5,
         id="validation_agent",
         replace_existing=True,
     )
     if not scheduler.running:
         scheduler.start()
-    logger.info("Validation agent scheduler started (every 15 min)")
+    logger.info("Validation agent scheduler started (every 5 min)")
 
 
 def stop_validation_scheduler():

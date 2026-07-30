@@ -82,6 +82,85 @@ def get_daily_pnl(db: Session, days: int = 30) -> dict:
     }
 
 
+def get_daily_targets(db: Session, days: int = 30) -> dict:
+    """
+    Daily profit target vs realized closed-trade P&L.
+    Hit = day's closed P&L >= target for that day.
+    """
+    paper = db.query(PaperAccount).first()
+    portfolio = float(paper.balance) if paper and paper.balance else float(settings.starting_balance)
+    # Fallback to snapshot / starting balance if paper looks empty but system started with capital
+    if portfolio <= 0:
+        portfolio = float(settings.starting_balance)
+
+    target_pct = settings.daily_profit_target_percent
+    target_usd = round(portfolio * (target_pct / 100), 2)
+
+    # Prefer latest fund-manager target only if it's in a sane range vs portfolio
+    fm = (
+        db.query(FundManagerDecision)
+        .order_by(desc(FundManagerDecision.created_at))
+        .first()
+    )
+    if fm and fm.target_daily_profit:
+        fm_target = float(fm.target_daily_profit)
+        # Ignore tiny/corrupt FM targets (e.g. leftover bad rows)
+        if fm_target >= target_usd * 0.5 and fm_target <= target_usd * 2.0:
+            target_usd = round(fm_target, 2)
+
+    daily = get_daily_pnl(db, days=days)
+    today_key = _day_key(datetime.utcnow())
+    history = []
+    hits = 0
+    misses = 0
+
+    for row in daily["series"]:
+        pnl = float(row["pnl"] or 0)
+        is_today = row["date"] == today_key
+        hit = pnl >= target_usd
+        if is_today:
+            status = "hit" if hit else "in_progress"
+        elif row["trades"] == 0:
+            status = "no_trade"
+        else:
+            status = "hit" if hit else "missed"
+            if hit:
+                hits += 1
+            else:
+                misses += 1
+        history.append({
+            "date": row["date"],
+            "pnl": pnl,
+            "target_usd": target_usd,
+            "target_percent": target_pct,
+            "progress_percent": round(min(100, (pnl / target_usd * 100)) if target_usd > 0 else 0, 1),
+            "hit": hit and row["trades"] > 0,
+            "status": status,
+            "wins": row["wins"],
+            "losses": row["losses"],
+            "trades": row["trades"],
+            "is_today": is_today,
+        })
+
+    today_row = next((h for h in history if h["is_today"]), None)
+    past = [h for h in history if not h["is_today"] and h["status"] in ("hit", "missed")]
+    hit_rate = round((hits / len(past) * 100), 1) if past else 0.0
+
+    return {
+        "target_usd": target_usd,
+        "target_percent": target_pct,
+        "portfolio_usd": round(portfolio, 2),
+        "today": today_row,
+        "history": list(reversed(history)),  # newest first for UI
+        "stats": {
+            "days": len(past),
+            "hits": hits,
+            "misses": misses,
+            "hit_rate_percent": hit_rate,
+        },
+    }
+
+
 def get_wealth_growth(db: Session, days: int = 30) -> dict:
     """Portfolio value over time from snapshots and paper balance history."""
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -234,6 +313,11 @@ def get_learnings(db: Session, days: int = 30) -> dict:
         status = "stable"
         status_label = "No new lessons today — using past experience"
 
+    today_pnl = get_daily_pnl(db, days=2).get("today") or {}
+    lesson_pnl = sum((i["pnl"] or 0) for i in today_memories)
+    raw = today_pnl.get("pnl")
+    live_pnl = float(raw) if raw is not None else float(lesson_pnl)
+
     return {
         "status": status,
         "status_label": status_label,
@@ -244,6 +328,10 @@ def get_learnings(db: Session, days: int = 30) -> dict:
             "date": today,
             "count": len(today_memories),
             "lessons": today_memories,
+            "pnl": round(live_pnl, 2),
+            "wins": int(today_pnl.get("wins") or 0),
+            "losses": int(today_pnl.get("losses") or 0),
+            "trades": int(today_pnl.get("trades") or 0),
         },
         "daily_digest": daily_digest,
     }

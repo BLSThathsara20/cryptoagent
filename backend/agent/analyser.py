@@ -144,6 +144,14 @@ def build_market_context(db: Session) -> dict:
         for m in memories
     ]
 
+    from data.news import recent_news_for_context
+
+    try:
+        recent_news = recent_news_for_context(db, limit=8)
+    except Exception as e:
+        logger.warning("News context failed: %s", e)
+        recent_news = []
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "prices": prices,
@@ -154,6 +162,7 @@ def build_market_context(db: Session) -> dict:
         "technical_signals": technical_signals,
         "watch_coins": watch,
         "past_lessons": past_lessons,
+        "recent_news": recent_news,
     }
 
 

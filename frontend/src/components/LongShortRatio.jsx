@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI } from '../api';
+import { usePolling } from '../hooks/useLive';
 
 export default function LongShortRatio() {
   const [ratios, setRatios] = useState([]);
 
-  useEffect(() => {
-    const load = () => fetchAPI('/market/long-short').then(setRatios).catch(console.error);
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    setRatios(await fetchAPI('/market/long-short'));
+  }, 15000);
 
   return (
     <div className="card">

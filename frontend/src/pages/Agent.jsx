@@ -2,6 +2,7 @@ import AgentPanel from '../components/AgentPanel';
 import FundManagerPanel from '../components/FundManagerPanel';
 import LLMUsagePanel from '../components/LLMUsagePanel';
 import TradeHistory from '../components/TradeHistory';
+import DailyTargetPanel from '../components/DailyTargetPanel';
 
 export default function Agent() {
   return (
@@ -10,6 +11,10 @@ export default function Agent() {
       <p className="text-sm text-gray-500 mb-6">
         Fund Manager handles your capital · Trading Agent finds and executes trades
       </p>
+
+      <div className="mb-6">
+        <DailyTargetPanel />
+      </div>
 
       <div className="mb-6">
         <FundManagerPanel />

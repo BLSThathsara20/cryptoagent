@@ -21,10 +21,10 @@ def _headers() -> dict:
     return headers
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(1), wait=wait_exponential(multiplier=1, min=1, max=3))
 async def fetch_liquidations(symbol: str = "BTC") -> list:
     """Fetch recent liquidation data for a symbol."""
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=12) as client:
         resp = await client.get(
             f"{COINGLASS_BASE}/liquidation_history",
             params={"symbol": symbol, "time_type": "h1"},
@@ -37,10 +37,10 @@ async def fetch_liquidations(symbol: str = "BTC") -> list:
         return []
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(1), wait=wait_exponential(multiplier=1, min=1, max=3))
 async def fetch_long_short_ratio(symbol: str = "BTC") -> dict:
     """Fetch long/short ratio and open interest."""
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=12) as client:
         resp = await client.get(
             f"{COINGLASS_BASE}/long_short",
             params={"symbol": symbol, "time_type": "h1"},
@@ -56,7 +56,8 @@ async def fetch_long_short_ratio(symbol: str = "BTC") -> dict:
 
 async def store_coinglass_data(db: Session, symbols: list[str] | None = None) -> int:
     """Fetch and store liquidation and long/short data for watch coins."""
-    symbols = symbols or settings.watch_coin_list[:5]
+    # Cap at 3 symbols — full watchlist was blocking the event loop ~20s+/cycle
+    symbols = (symbols or settings.watch_coin_list)[:3]
     count = 0
     for symbol in symbols:
         try:

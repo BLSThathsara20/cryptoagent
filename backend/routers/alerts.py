@@ -6,18 +6,30 @@ from sqlalchemy.orm import Session
 
 from db.session import get_db
 from alerts.manager import get_alerts, get_unread_count, mark_read, mark_all_read, create_alert
-from agent.binance_client import is_configured, fetch_spot_balances
+from config import settings
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
 @router.get("")
 def list_alerts(
-    limit: int = Query(50, ge=1, le=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=100),
+    limit: int | None = Query(None, ge=1, le=200, description="Legacy alias for page_size"),
     unread_only: bool = False,
     db: Session = Depends(get_db),
 ):
-    rows = get_alerts(db, limit=limit, unread_only=unread_only)
+    size = limit if limit is not None else page_size
+    from utils.pagination import paginate_params, page_meta
+    from db.models import SystemAlert
+    from sqlalchemy import desc
+
+    offset, size = paginate_params(page, size)
+    q = db.query(SystemAlert)
+    if unread_only:
+        q = q.filter(SystemAlert.read.is_(False))
+    total = q.count()
+    rows = q.order_by(desc(SystemAlert.created_at)).offset(offset).limit(size).all()
     return {
         "unread_count": get_unread_count(db),
         "alerts": [
@@ -32,6 +44,7 @@ def list_alerts(
             }
             for r in rows
         ],
+        **page_meta(total, page, size),
     }
 
 
@@ -54,31 +67,29 @@ def read_all_alerts(db: Session = Depends(get_db)):
 
 @router.post("/test-binance")
 def test_binance_connection(db: Session = Depends(get_db)):
-    """Test Binance API connection and create alert with result."""
-    if not is_configured():
+    """Test Binance market + account API and create alert with result."""
+    from agent.binance_client import diagnose_binance
+
+    diag = diagnose_binance(force=True)
+    if not diag.get("configured"):
         create_alert(
             db, "warning", "binance", "Binance Not Configured",
-            "Add BINANCE_API_KEY and BINANCE_SECRET to your .env file.",
+            "Add BINANCE_API_KEY and BINANCE_SECRET to your .env file. Public market data still works.",
         )
-        return {"connected": False, "message": "API keys not set in .env"}
+        return {"connected": False, "market_ok": diag.get("market_ok"), **diag}
 
-    balances = fetch_spot_balances()
-    if balances is None:
+    if diag.get("account_ok"):
         create_alert(
-            db, "error", "binance", "Binance Connection Failed",
-            "Could not connect. Check API key, secret, permissions (Enable Reading), and IP whitelist.",
+            db, "success", "binance", "Binance Connected",
+            f"{diag.get('message')}. LIVE_MODE={str(settings.live_mode).lower()} — "
+            f"{'real funds can trade' if settings.live_mode else 'paper only, real funds NOT traded'}.",
         )
-        return {"connected": False, "message": "Connection failed — check keys and permissions"}
+        return {"connected": True, **diag}
 
-    assets = list(balances.keys())
-    total_assets = len(assets)
+    # Market may still be OK while account fails (-2015)
+    level = "warning" if diag.get("market_ok") and not settings.live_mode else "error"
     create_alert(
-        db, "success", "binance", "Binance Connected",
-        f"Successfully connected. Found {total_assets} assets with balance: {', '.join(assets[:8])}{'...' if total_assets > 8 else ''}. "
-        f"LIVE_MODE=false — paper trading active, real funds are NOT traded.",
+        db, level, "binance", "Binance Account API Issue",
+        diag.get("hint") or diag.get("message") or "Account check failed",
     )
-    return {
-        "connected": True,
-        "assets": assets,
-        "message": f"Connected — {total_assets} assets found. Paper mode: no real trades.",
-    }
+    return {"connected": False, **diag}

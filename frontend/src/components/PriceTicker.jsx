@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
-import { fetchAPI, formatPrice, formatPercent } from '../api';
+import { formatPrice, formatPercent } from '../api';
+import { useLivePulse } from '../LivePulseContext';
 
 export default function PriceTicker() {
-  const [coins, setCoins] = useState([]);
+  const { prices: coins } = useLivePulse();
 
-  useEffect(() => {
-    const load = () => fetchAPI('/market/prices?limit=20').then(setCoins).catch(console.error);
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  if (!coins?.length) {
+    return (
+      <div className="bg-dark-800 border-b border-dark-600 py-2 px-4 text-xs text-gray-500">
+        Loading live prices…
+      </div>
+    );
+  }
 
   return (
     <div className="bg-dark-800 border-b border-dark-600 overflow-hidden">

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { fetchAPI, formatPrice } from '../api';
+import { usePolling, useNow } from '../hooks/useLive';
 
 function StatusDot({ status }) {
   const colors = {
@@ -15,9 +16,9 @@ function StatusDot({ status }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${colors[status] || 'bg-gray-500'}`} />;
 }
 
-function timeAgo(iso) {
+function timeAgo(iso, nowMs = Date.now()) {
   if (!iso) return 'Never';
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = nowMs - new Date(iso).getTime();
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
@@ -29,25 +30,21 @@ export default function Settings() {
   const [system, setSystem] = useState(null);
   const [memories, setMemories] = useState([]);
   const [error, setError] = useState(null);
+  const now = useNow(1000);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [s, m] = await Promise.all([
-          fetchAPI('/system/status'),
-          fetchAPI('/system/memories?limit=10'),
-        ]);
-        setSystem(s);
-        setMemories(m);
-        setError(null);
-      } catch (e) {
-        setError(e.message);
-      }
-    };
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(async () => {
+    try {
+      const [s, m] = await Promise.all([
+        fetchAPI('/system/status'),
+        fetchAPI('/system/memories?limit=10'),
+      ]);
+      setSystem(s);
+      setMemories(m);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, 8000);
 
   if (error) {
     return (
@@ -120,7 +117,7 @@ export default function Settings() {
           )}
           {system.backup && (
             <p className="text-xs text-gray-600 mt-2">
-              Backups: {system.backup.backup_count} saved · last {system.backup.last_run_at ? timeAgo(system.backup.last_run_at) : 'on startup'}
+              Backups: {system.backup.backup_count} saved · last {system.backup.last_run_at ? timeAgo(system.backup.last_run_at, now) : 'on startup'}
             </p>
           )}
         </div>
@@ -205,7 +202,7 @@ export default function Settings() {
                       {row.status.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="py-2 px-2 text-gray-400">{timeAgo(row.last_update)}</td>
+                  <td className="py-2 px-2 text-gray-400">{timeAgo(row.last_update, now)}</td>
                   <td className="py-2 px-2 text-right">{row.records_24h?.toLocaleString()}</td>
                   <td className="py-2 px-2 text-gray-500">{row.interval}</td>
                 </tr>
@@ -214,7 +211,7 @@ export default function Settings() {
           </table>
         </div>
         <p className="text-xs text-gray-600 mt-2">
-          Ingestion cycles: {system.ingestion_scheduler.total_cycles} · WS messages: {system.ingestion_scheduler.last_run_at ? timeAgo(system.ingestion_scheduler.last_run_at) : '—'}
+          Ingestion cycles: {system.ingestion_scheduler.total_cycles} · WS messages: {system.ingestion_scheduler.last_run_at ? timeAgo(system.ingestion_scheduler.last_run_at, now) : '—'}
         </p>
       </div>
 
@@ -223,7 +220,7 @@ export default function Settings() {
         <h2 className="text-sm font-semibold text-gray-300 mb-1">What The Agent Does Right Now</h2>
         <p className="text-xs text-gray-500 mb-4">
           Agent status: <span className="text-white capitalize">{system.agent.status}</span>
-          {' · '}Last run: {timeAgo(system.agent.last_run_at)}
+          {' · '}Last run: {timeAgo(system.agent.last_run_at, now)}
           {' · '}Decisions: {system.agent.decisions_total} total ({system.agent.decisions_24h} today)
         </p>
 
@@ -290,7 +287,7 @@ export default function Settings() {
             <p className="text-xs text-gray-500">
               Auto cleanup: order book {system.maintenance.retention_policy?.order_book_days}d ·
               prices {system.maintenance.retention_policy?.coin_prices_days}d ·
-              last run {system.maintenance.last_run_at ? timeAgo(system.maintenance.last_run_at) : 'scheduled daily'}
+              last run {system.maintenance.last_run_at ? timeAgo(system.maintenance.last_run_at, now) : 'scheduled daily'}
             </p>
           )}
         </div>

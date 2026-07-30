@@ -1,45 +1,74 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { fetchAPI, putAPI, postAPI, formatPrice } from '../api';
+import { useLivePulse } from '../LivePulseContext';
+import { usePolling, formatCountdown, isAgentBusy } from '../hooks/useLive';
 
-const STATUS_COLORS = {
-  idle: 'bg-gray-500',
-  running: 'bg-accent-green animate-pulse',
-  analysing: 'bg-accent-yellow animate-pulse',
+const STAGE_LABELS = {
+  preparing: 'Preparing to decide',
+  analysing: 'Reading market',
+  deciding: 'Making decision',
+  executing: 'Placing trade',
+  running: 'Placing trade',
+  monitoring: 'Watching market',
+  idle: 'Watching market',
+  stopped: 'Agent stopped',
 };
 
+function formatAgo(iso, nowMs = Date.now()) {
+  if (!iso) return 'never';
+  const sec = Math.max(0, Math.floor((nowMs - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  return `${Math.floor(sec / 3600)}h ago`;
+}
+
 export default function AgentPanel() {
+  const { pulse, now, nextIn } = useLivePulse();
   const [status, setStatus] = useState(null);
   const [decision, setDecision] = useState(null);
   const [account, setAccount] = useState(null);
+  const [validation, setValidation] = useState(null);
   const [settings, setSettings] = useState({ loop_interval: 300, max_risk_percent: 2, watch_coins: '' });
   const [showConfirm, setShowConfirm] = useState(false);
-  const [running, setRunning] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartMsg, setRestartMsg] = useState('');
 
   const load = async () => {
-    try {
-      const [s, d, a] = await Promise.all([
-        fetchAPI('/agent/status'),
-        fetchAPI('/agent/last-decision'),
-        fetchAPI('/agent/paper-account'),
-      ]);
-      setStatus(s);
-      setDecision(d);
-      setAccount(a);
+    const [s, d, a, v] = await Promise.all([
+      fetchAPI('/agent/status'),
+      fetchAPI('/agent/last-decision'),
+      fetchAPI('/agent/paper-account'),
+      fetchAPI('/issues'),
+    ]);
+    setStatus(s);
+    setDecision(d);
+    setAccount(a);
+    setValidation(v);
+    if (s) {
       setSettings({
         loop_interval: s.loop_interval,
         max_risk_percent: s.max_risk_percent,
         watch_coins: s.watch_coins,
       });
-    } catch (e) {
-      console.error(e);
     }
   };
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  usePolling(load, 5000);
+
+  const restartAgent = async () => {
+    setRestarting(true);
+    setRestartMsg('');
+    try {
+      const r = await postAPI('/agent/restart', {}, 15000);
+      setRestartMsg(r.message || 'Agent loop restarted');
+      await load();
+    } catch (e) {
+      setRestartMsg(e?.message || 'Restart failed — try again when backend is up');
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   const toggleLiveMode = async () => {
     if (!status?.live_mode) {
@@ -61,47 +90,126 @@ export default function AgentPanel() {
     load();
   };
 
-  const runCycleNow = async () => {
-    setRunning(true);
-    try {
-      await postAPI('/agent/run-cycle');
-      await load();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setRunning(false);
-    }
-  };
+  const loopOn = Boolean(pulse?.agent?.loop_running ?? status?.loop_running);
+  const online = pulse?.online ?? true;
+  const stage = pulse?.agent?.stage || status?.status || 'unknown';
+  const stageLabel = pulse?.agent?.label || STAGE_LABELS[stage] || stage;
+  const busy = isAgentBusy(stage);
+  const lastRun = pulse?.agent?.last_run_at || status?.last_run_at;
+  const liveMode = pulse?.agent?.live_mode ?? status?.live_mode;
+  const intervalSec = pulse?.agent?.interval_sec || status?.loop_interval || 300;
+  const needsRestart = !loopOn || !online;
+
+  const health = validation?.overall_status;
+  const healthScore = validation?.health_score;
+  const openIssues = validation?.open_count ?? 0;
+  const lastValidation = validation?.last_validation_at;
 
   return (
     <div className="space-y-4">
-      {/* Paper trading banner */}
-      {!status?.live_mode && (
-        <div className="card border border-accent-green/30 bg-green-900/10">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-accent-green">Mock Trading Active (Paper Mode)</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Virtual $10,000 · Binance keys read your real balances but NO real trades execute
+      <div className={`card border ${loopOn ? 'border-accent-green/40 bg-green-900/10' : 'border-accent-red/40 bg-red-900/10'}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${
+                  !loopOn
+                    ? 'bg-accent-red'
+                    : busy
+                      ? 'bg-accent-blue animate-pulse'
+                      : 'bg-accent-green animate-pulse'
+                }`}
+              />
+              <p className="text-sm font-medium text-white truncate">
+                {loopOn ? 'Agent running' : 'Agent stopped'}
+                {!online && <span className="text-accent-yellow ml-2 text-xs">· offline</span>}
               </p>
             </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {stageLabel}
+              {lastRun ? ` · last cycle ${formatAgo(lastRun, now)}` : ''}
+              {` · every ${intervalSec}s`}
+            </p>
+            <p className={`text-sm mt-2 font-medium tabular-nums ${busy ? 'text-accent-blue' : 'text-white'}`}>
+              {busy ? 'Trading cycle in progress…' : `Next trading check: ${formatCountdown(nextIn)}`}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Auto-restarts when the network comes back. Use Restart if it still looks stuck.
+            </p>
+            {restartMsg && (
+              <p className="text-xs text-accent-green mt-1">{restartMsg}</p>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <span className={`text-xs px-2 py-1 rounded ${liveMode ? 'bg-accent-red/20 text-accent-red' : 'bg-accent-green/20 text-accent-green'}`}>
+              {liveMode ? 'LIVE trades' : 'PAPER trades'}
+            </span>
             <button
-              onClick={runCycleNow}
-              disabled={running}
-              className="px-4 py-2 bg-accent-green hover:bg-green-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 shrink-0"
+              type="button"
+              onClick={restartAgent}
+              disabled={restarting}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                needsRestart
+                  ? 'bg-accent-yellow text-dark-900 hover:bg-yellow-400'
+                  : 'bg-dark-700 text-gray-200 hover:bg-dark-600'
+              }`}
+              title="Force-restart the agent trading loop"
             >
-              {running ? 'Running...' : 'Run Agent Now'}
+              {restarting ? 'Restarting…' : 'Restart agent'}
             </button>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Live validation snapshot (real data) */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-300">Validation</h3>
+          <Link to="/issues" className="text-xs text-accent-blue hover:underline">
+            Issues →
+          </Link>
+        </div>
+        {validation ? (
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <span className="text-gray-500 text-xs">Health</span>
+              <p className="font-medium capitalize">
+                {typeof healthScore === 'number' ? Math.round(healthScore) : '—'}
+                {health ? ` · ${health}` : ''}
+              </p>
+            </div>
+            <div>
+              <span className="text-gray-500 text-xs">Open issues</span>
+              <p className={openIssues > 0 ? 'text-accent-yellow font-medium' : 'text-accent-green font-medium'}>
+                {openIssues}
+              </p>
+            </div>
+            <div>
+              <span className="text-gray-500 text-xs">Last check</span>
+              <p className="text-white text-xs mt-1">{lastValidation ? formatAgo(lastValidation) : 'pending'}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">Loading validation…</p>
+        )}
+        <p className="text-[11px] text-gray-600 mt-2">Runs automatically every few minutes.</p>
+      </div>
+
       {/* Status */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-300">Agent Status</h3>
           <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full ${STATUS_COLORS[status?.status] || 'bg-gray-500'}`} />
-            <span className="text-sm capitalize">{status?.status || 'unknown'}</span>
+            <div
+              className={`w-2.5 h-2.5 rounded-full ${
+                !loopOn
+                  ? 'bg-accent-red'
+                  : busy
+                    ? 'bg-accent-blue animate-pulse'
+                    : 'bg-accent-green animate-pulse'
+              }`}
+            />
+            <span className="text-sm">{stageLabel}</span>
           </div>
         </div>
 
@@ -112,17 +220,17 @@ export default function AgentPanel() {
               <button
                 onClick={toggleLiveMode}
                 className={`px-3 py-1 rounded text-xs font-medium ${
-                  status?.live_mode ? 'bg-accent-red text-white' : 'bg-accent-green/20 text-accent-green'
+                  liveMode ? 'bg-accent-red text-white' : 'bg-accent-green/20 text-accent-green'
                 }`}
               >
-                {status?.live_mode ? 'LIVE' : 'PAPER'}
+                {liveMode ? 'LIVE' : 'PAPER'}
               </button>
             </div>
           </div>
           <div>
-            <span className="text-gray-500">Last Run</span>
-            <p className="text-white mt-1">
-              {status?.last_run_at ? new Date(status.last_run_at).toLocaleString() : 'Never'}
+            <span className="text-gray-500">Last cycle</span>
+            <p className="text-white mt-1 text-xs">
+              {lastRun ? new Date(lastRun).toLocaleString() : 'Waiting for first cycle'}
             </p>
           </div>
         </div>
@@ -151,7 +259,6 @@ export default function AgentPanel() {
         )}
       </div>
 
-      {/* Last Decision */}
       {decision && (
         <div className="card">
           <h3 className="text-sm font-semibold text-gray-300 mb-3">Last Decision</h3>
@@ -178,7 +285,6 @@ export default function AgentPanel() {
         </div>
       )}
 
-      {/* Settings */}
       <div className="card">
         <h3 className="text-sm font-semibold text-gray-300 mb-3">Agent Settings</h3>
         <div className="space-y-3 text-sm">
@@ -219,7 +325,6 @@ export default function AgentPanel() {
         </div>
       </div>
 
-      {/* Live Mode Confirmation */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-dark-800 border border-dark-600 rounded-xl p-6 max-w-md mx-4">
